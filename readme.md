@@ -14,7 +14,7 @@ and watchdog for monitoring the data folder.
 There are small modification to the pylinac 3.22 package that should be done.
 These are likely fixed in future updates.
 
-Fix for reading multiple CT series (![Github issue](https://github.com/jrkerns/pylinac/issues/494))
+Fix for reading multiple CT series ([Github issue](https://github.com/jrkerns/pylinac/issues/494))
 
 ### Installation
 - [Anaconda installation](https://docs.anaconda.com/anaconda/install/) 
