@@ -7,8 +7,6 @@ Created on Mon Apr 22 10:32:35 2024
 Known issues: 
     - Identification of faulty image (cropped field)
     - Other data types than dicom
-    - Working with two mixed CT series
-    - Does not analyze multiple CT series from same date
     - Pylinac 3.22 does not sort multiple series correctly. Issue raised:
         https://github.com/jrkerns/pylinac/issues/494
 """
