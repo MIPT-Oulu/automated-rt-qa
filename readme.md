@@ -3,15 +3,14 @@
 (c) Santeri Rytky, Oulu University Hospital, 2024
 
 ## Background
-There are multiple quality assurance tests 
-that are done periodically at radiation therapy clinics. 
+Multiple quality assurance tests are done periodically at radiation therapy clinics. 
 The analysis of the measurements is often time-consuming and subject to errors from manual processing.
 This repository acts as a framework that automatically analyses images from a given data folder.
-The main dependencies are pylinac package for calculating the analyses 
-and watchdog for monitoring the data folder.
+The main dependencies are the Pylinac package for calculating the analyses 
+and the Watchdog package for monitoring the data folder.
 
 ## Requirements
-There are small modification to the pylinac 3.22 package that should be done.
+There are small modifications to the Pylinac 3.22 package that should be done.
 These are likely fixed in future updates.
 
 Fix for reading multiple CT series ([Github issue](https://github.com/jrkerns/pylinac/issues/494))
