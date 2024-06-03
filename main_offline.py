@@ -27,7 +27,7 @@ def main():
                         help='Path for a file with network drive details.')
     parser.add_argument('--processed_path', type=Path, default='Z:/Python/automated-rt-qa/processed')
     parser.add_argument('--save_path', type=Path, default='Z:/Python/automated-rt-qa/results')
-    parser.add_argument('--log_path', type=Path, default='automated_qa.log', help='File for saving event logs.')
+    parser.add_argument('--log_path', type=Path, default='logs/automated_qa.log', help='File for saving event logs.')
     parser.add_argument('--file_types', type=tuple, default=('.dcm', '.tiff', '.tif'), help='File types listed for analysis.')
     parser.add_argument('--catphan_model', default=CustomCP504, 
                         choices=[CatPhan503, CatPhan504, CatPhan600, CatPhan604, CustomCP504], 
