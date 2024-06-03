@@ -9,11 +9,17 @@ from subprocess import run
 
 
 def start_log(path):
+    # Log folder
+    path.parent.mkdir(exist_ok=True)
+    
     # Logging parameters
-    logging.basicConfig(filename=path, level=logging.DEBUG, 
+    month = datetime.today().strftime('_%Y_%m')  # Name log files using current year and month
+    logging.basicConfig(filename=f'{path.parent}/{path.stem}{month}{path.suffix}', 
+                        level=logging.DEBUG, 
                         format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
                         datefmt='%m-%d %H:%M',
-                        filemode='w')
+                        filemode='a'  # a = append to existing file, w = overwrite
+                        )
     
     # Define a console Handler which writes INFO messages or higher
     console = logging.StreamHandler()

@@ -163,4 +163,4 @@ cython_debug/
 
 # User-dependent files
 share.txt
-automated_qa.log
+logs/
