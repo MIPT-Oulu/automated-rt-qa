@@ -29,10 +29,10 @@ def main():
     # Input arguments and constants
     parser = argparse.ArgumentParser(
         description='Automated radiation therapy QA tests')
-    parser.add_argument('--data_path', type=Path, default='Z:/Python/automated-rt-qa/data')
+    parser.add_argument('--data_path', type=Path, default='data')
     parser.add_argument('--network_path', type=Path, default='share.txt')
-    parser.add_argument('--processed_path', type=Path, default='Z:/Python/automated-rt-qa/processed')
-    parser.add_argument('--save_path', type=Path, default='Z:/Python/automated-rt-qa/results')
+    parser.add_argument('--processed_path', type=Path, default='processed')
+    parser.add_argument('--save_path', type=Path, default='results')
     parser.add_argument('--log_path', type=Path, default='logs/automated_qa.log', help='File for saving event logs.')
     parser.add_argument('--file_types', type=tuple, default=('.dcm', '.tiff', '.tif'), help='File types listed for analysis.')
     parser.add_argument('--catphan_model', default=CustomCP504, 
@@ -42,8 +42,8 @@ def main():
     parser.add_argument('--bb_size_mm', type=float, default=6.0, 
                         help='Size of the ball-bearing phantom for Winston-Lutz test.')
     parser.add_argument('--pdf', type=bool, default=False, help='Option for saving a pdf results file.')
-    parser.add_argument('--plot', type=bool, default=False, help='Option for plotting results images.')    
-    parser.add_argument('--wait_time', type=int, default=30, help='Waiting time (s) after a file is found. Allows user to finish file transfers.')
+    parser.add_argument('--plot', type=bool, default=True, help='Option for plotting results images.')
+    parser.add_argument('--wait_time', type=int, default=5, help='Waiting time (s) after a file is found. Allows user to finish file transfers.')
     parser.add_argument('--monitor_time', type=int, default=5, help='Waiting time (s) for checking if file structure has changed.')
     
     # Use a global variable for arguments to allow updating them outside the function
@@ -75,6 +75,7 @@ def main():
     except KeyboardInterrupt:
         observer.stop()
     observer.join()
+
 
 class AutomatedQA(PatternMatchingEventHandler):
     def on_created(self, event):

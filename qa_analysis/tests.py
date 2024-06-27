@@ -12,6 +12,7 @@ from pathlib import Path
 from time import time
 
 from pylinac import image
+from natiivi_lv.normi13 import Normi13
 
 from qa_analysis.utilities import wait_user_close, move_file, save_excel
 
@@ -181,8 +182,7 @@ def catphan_analysis(im, args, pdf=True, plot=False, tolerances=dict(),
     # Test logger
     logger_t = logging.getLogger('qa.test')
     logger_t.info(f"Running Catphan analysis for {Path(im.path).name}")
-    
-    
+
     analysis_path = os.path.dirname(im.path)
     start = time()
     
@@ -234,9 +234,9 @@ def catphan_analysis(im, args, pdf=True, plot=False, tolerances=dict(),
             img.metadata[0x0018, 0x5100].value = 'HFS'
             # Replace the data folder in image path with processed
             if parent_folder == modality:
-                processed_path = img.path.replace(args.data_path.stem, f'{args.processed_path.stem}' )
+                processed_path = img.path.replace(args.data_path.stem, f'{args.processed_path.stem}')
             else:
-                processed_path = img.path.replace(args.data_path.stem, f'{args.processed_path.stem}/{modality}' )
+                processed_path = img.path.replace(args.data_path.stem, f'{args.processed_path.stem}/{modality}')
             # Move the file
             move_file(img.path, processed_path)
             
@@ -339,3 +339,32 @@ def winston_analysis(im, args, pdf=True, plot=False, rep_dir='Winston-Lutz repor
         move_file(img, processed_path)
         
     return wl.results_data(as_dict=True)
+
+
+def normi_13_analysis(im, args):
+
+    # Test logger
+    logger_t = logging.getLogger('qa.test')
+    logger_t.info(f"Running Normi-13 analysis for {Path(im.path).name}")
+
+    modality = 'Normi 13'
+    n_13 = Normi13(im.path, plot=args.plot, fig_path=args.save_path / modality / 'Figures')
+    n_13.analyze()
+
+    # Get results
+    results = n_13.results_data(as_dict=True)
+    results['uniformity'] = {
+        'measurements': n_13.uniformity_rois,
+        'background': n_13.bg_mean,
+        'max_deviation': n_13.uniformity_deviation,
+    }
+    results['linearity'] = n_13.high_contrast_rois
+
+    # Save results to Excel
+    save_excel(im, results, save_path=args.save_path / modality, test='normi_13')
+
+    # Move file
+    processed_path = im.path.replace(args.data_path.stem, f'{args.processed_path.stem}/{modality}' )
+    move_file(im.path, processed_path)
+
+    return n_13.results

@@ -1,10 +1,12 @@
 argue
 matplotlib >= 2.0
+natiivi-lv >= 0.1
 numpy >= 1.16
 Pillow >= 4.0
 py-linq
 pydantic >= 2.0
 pydicom >= 2.0
+pylinac >= 3.24.1
 reportlab >= 3.3
 scikit-image >= 0.17
 scipy >= 1.1

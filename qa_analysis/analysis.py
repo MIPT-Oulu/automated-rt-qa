@@ -17,7 +17,7 @@ from pathlib import Path
 from os.path import dirname
 import logging
 
-from qa_analysis.tests import drgs_test, drmlc_test, catphan_analysis, winston_analysis, acr_analysis
+from qa_analysis.tests import drgs_test, drmlc_test, catphan_analysis, winston_analysis, acr_analysis, normi_13_analysis
 from qa_analysis.utilities import save_excel, move_file, remove_empty_dir, map_network_drive
 from qa_analysis.constants import (
     T2_DR_ROI_HAL, T2_GS_ROI_HAL, T3_MLC_ROI_HAL, 
@@ -67,10 +67,15 @@ def analyze_image(arg):
     patients = []  # Patient ID (device name)
     files = []  # File names
     for i in range(len(images)):
-        dcm_images.append(image.LinacDicomImage(images[i]))
-        dates.append(dcm_images[i].metadata[0x0008, 0x0021].value)
-        times.append(dcm_images[i].metadata[0x0008, 0x0031].value)
-        patients.append(dcm_images[i].metadata[0x0010, 0x0020].value)
+        try:
+            im = image.LinacDicomImage(images[i])
+            dcm_images.append(im)
+        except AttributeError:
+            logger_a.info(f'Unable to open image {images[i]}')
+            continue
+        dates.append(im.metadata[0x0008, 0x0021].value)
+        times.append(im.metadata[0x0008, 0x0031].value)
+        patients.append(im.metadata[0x0010, 0x0020].value)
         files.append(Path(images[i]).stem)
     
     # Sort images by Series Date
@@ -93,11 +98,11 @@ def analyze_image(arg):
         # Loop for all patients
         for patient in unique_patients:            
             # Indexes of the same patient ID in the measurement date
-            pat_id =  np.where(np.array(patients) == patient)[0]
+            pat_id = np.where(np.array(patients) == patient)[0]
             # Combine the date and patient id
             pat_id = list(set(pat_id) & set(date_id))
                         
-            try:                
+            try:
                 # Loop through images of the patient in measurement date
                 # Find the relevant images for each test
                 test_images = {
@@ -109,46 +114,50 @@ def analyze_image(arg):
                     't3_roi': None}
                 for im_id in pat_id:
                     # Find if the image is from T2 or T3 test
-                    test_images = detect_t2_t3_tests(dcm_images[im_id], test_images) 
-                    
+                    test_images = detect_t2_t3_tests(dcm_images[im_id], test_images)
+
                     # Find Catphan images
                     test_images = detect_catphan_tests(dcm_images[im_id], test_images)
-                    
+
                     # Find ACR images
                     test_images = detect_acr_tests(dcm_images[im_id], test_images, arg)
-                    
+
                     # Find Winston-Lutz images
                     test_images = detect_winston_tests(dcm_images[im_id], test_images)
-                
+
+                    # Find CR images
+                    test_images = detect_normi_13_tests(dcm_images[im_id], test_images)
+
                 # T2/T3 test detected
                 if 't3_mlc' in test_images:
                     # Run T2/T3 analysis
                     run_t2_t3_tests(test_images, arg)
                 elif 'catphan' in test_images:
                     # Run Caphan analysis
-                    results = catphan_analysis(test_images['catphan'], arg, 
-                                               tolerances=CATPHAN_TOLERANCES) 
+                    results = catphan_analysis(test_images['catphan'], arg,
+                                               tolerances=CATPHAN_TOLERANCES)
                 elif 'catphan_linac' in test_images:
                     # Run Caphan analysis
-                    results = catphan_analysis(test_images['catphan_linac'], arg, 
-                                               tolerances=CATPHAN_CBCT_TOLERANCES) 
+                    results = catphan_analysis(test_images['catphan_linac'], arg,
+                                               tolerances=CATPHAN_CBCT_TOLERANCES)
                 elif 'acr' in test_images:
                     # Run ACR analysis
                     results = acr_analysis(test_images['acr'], arg)
                 elif 'winston' in test_images:
-                    # Run Winston-Lutz analysis                    
-                    results = winston_analysis(test_images['winston'], arg)                    
-                # Here more tests could be ran
+                    # Run Winston-Lutz analysis
+                    results = winston_analysis(test_images['winston'], arg)
+                elif 'normi_13' in test_images:
+                    results = normi_13_analysis(test_images['normi_13'], arg)
+                # Here more tests could be run
                 else:
                     logger_a.info(f'Test not implemented for patient {patient}, date {date}')
-    
+
             # Missing dictionary data raises KeyError
             # ValueError when running Winston analysis with incorrect images
-            except (KeyError, ValueError, ZeroDivisionError) as e:
+            except (KeyError, TypeError, ValueError,
+                    AttributeError, ZeroDivisionError, IndexError) as e:
                 logger_a.debug(f'Cannot analyse from measurement date {date} due to error {e}')
-                
-    
-    
+
     # List dicom files remaining in data path
     images = glob(str(arg.data_path / '**/*.*'), recursive=True)
     images.sort()
@@ -232,10 +241,12 @@ def detect_t2_t3_tests(dcm_image, res_images):
 
     return res_images
 
+
 def detect_catphan_tests(dcm_image, res_images):
 
     # Modality should be CT
-    modality = dcm_image.metadata[0x0008, 0x0060].value
+    if dcm_image.metadata[0x0008, 0x0060].value != 'CT':
+        return res_images
     
     # The orientation should be head first supine
     if dcm_image.metadata[0x0018, 0x5100].value == 'FFS':
@@ -246,7 +257,7 @@ def detect_catphan_tests(dcm_image, res_images):
         dcm_image.save(dcm_image.path)
     
     # Linac CBCT
-    if modality == 'CT' and (0x0008, 0x114a) in dcm_image.metadata:
+    if (0x0008, 0x114a) in dcm_image.metadata:
         
         # For Linac CBCT, SOP UID should be RT Plan storage
         ref_inst = 'RT Plan or RT Ion Plan or Radiation Set to be verified'
@@ -261,13 +272,10 @@ def detect_catphan_tests(dcm_image, res_images):
                 res_images['catphan_linac'] = dcm_image
     
     # Diagnostic CT
-    elif modality == 'CT' and (0x0008, 0x1140) in dcm_image.metadata and not 'catphan' in res_images:
+    elif (0x0008, 0x1140) in dcm_image.metadata and not 'catphan' in res_images:
         # For diagnostic CT, SOP UID [0x0008, 0x1140][0x0008, 0x1150] should be CT Image Storage
         if dcm_image.metadata[0x0008, 0x1140].value[0][0x0008, 0x1150].repval == 'CT Image Storage':
             res_images['catphan'] = dcm_image
-    # Linac images (e.g. Winston-Lutz)
-    elif modality == 'RTIMAGE':
-        pass
         
     return res_images
 
@@ -295,21 +303,20 @@ def detect_acr_tests(dcm_image, res_images, args):
     """
 
     # Modality should be MRI
-    modality = dcm_image.metadata[0x0008, 0x0060].value    
-    if modality == 'MR' and not 'acr' in res_images:
+    if dcm_image.metadata[0x0008, 0x0060].value != 'MR':
+        return res_images
+
+    if 'acr' not in res_images:
         # Update field strength to Dicom metadata
         dcm_image.metadata.MagneticFieldStrength = args.field_strength
         # Save the image with new metadata
         dcm_image.save(dcm_image.path)
         
         res_images['acr'] = dcm_image
-    # Catphan image from same series
-    elif modality == 'MR' and dirname(dcm_image.path) == dirname(res_images['acr'].path):
+    # ACR image from same series
+    elif dirname(dcm_image.path) == dirname(res_images['acr'].path):
         pass
-    # Linac images (e.g. Winston-Lutz)
-    elif modality == 'RTIMAGE':
-        pass
-        
+
     return res_images
 
 
@@ -318,13 +325,25 @@ def detect_winston_tests(dcm_image, res_images):
     # Patient name could be added as a filter    
 
     # Modality should be RTIMAGE
-    modality = dcm_image.metadata[0x0008, 0x0060].value    
-    if modality == 'RTIMAGE' and not 'winston' in res_images:
+    if dcm_image.metadata[0x0008, 0x0060].value != 'RTIMAGE':
+        return res_images
+
+    # First WL test image
+    if not 'winston' in res_images:
         res_images['winston'] = dcm_image
     # Winston-Lutz image from same series
-    elif modality == 'RTIMAGE' and dirname(dcm_image.path) == dirname(res_images['winston'].path):
+    elif dirname(dcm_image.path) == dirname(res_images['winston'].path):
         pass
         
+    return res_images
+
+
+def detect_normi_13_tests(dcm_image, res_images):
+    # Modality should be CR
+    modality = dcm_image.metadata[0x0008, 0x0060].value
+    if (modality == 'DX' or modality == 'CR') and 'cr' not in res_images:
+        res_images['normi_13'] = dcm_image
+
     return res_images
 
 
@@ -368,6 +387,3 @@ def run_t2_t3_tests(test, args):
                 processed_path = im.path.replace(args.data_path.stem, f'{args.processed_path.stem}/{modality}' )
             # Move the file
             move_file(im.path, processed_path)
-
-    
-        

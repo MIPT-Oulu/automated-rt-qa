@@ -2,6 +2,7 @@
 
 import os
 import logging
+from datetime import datetime
 import pandas as pd
 from pathlib import Path
 from time import sleep, time
@@ -46,17 +47,21 @@ def map_network_drive(path):
     None.
 
     """
-    # Map network drive with correct password
-    with open(str(path), 'r') as f:
-        share = f.readlines()
-    
-    # Return if path exists
-    if os.path.exists(f'{share[0]}/'):
-        return
-    
-    # Otherwise, map drive
-    share_command=fr'net use {share[0]} {share[1]} /user:{share[2]} {share[3]}'.replace('\n', ' ')
-    run(share_command, shell=True)
+    if os.path.isfile(str(path)):
+        # Map network drive with correct password
+        with open(str(path), 'r') as f:
+            share = f.readlines()
+
+        # Return if path exists
+        if os.path.exists(f'{share[0]}/'):
+            return
+
+        # Otherwise, map drive
+        share_command=fr'net use {share[0]} {share[1]} /user:{share[2]} {share[3]}'.replace('\n', ' ')
+        run(share_command, shell=True)
+    else:
+        logging.info(f'{path} does not exist, network drive not mapped.')
+
 
 def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
     """
@@ -87,9 +92,14 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
     """
 
     # Date, time and Patient ID
-    date = dicom_im.metadata[0x0008, 0x0021].value
-    time = dicom_im.metadata[0x0008, 0x0031].value
-    patient = dicom_im.metadata[0x0010, 0x0020].value
+    date = dicom_im.metadata[0x00080021].value
+    time = dicom_im.metadata[0x00080031].value
+    institution = dicom_im.metadata[0x00080080].value
+    station = dicom_im.metadata[0x00081010].value
+    dept = dicom_im.metadata[0x00081040].value
+    patient = dicom_im.metadata[0x00100020].value
+
+    save_path.mkdir(exist_ok=True, parents=True)
     
     # Results column headers
     if test == 'T2-T3':
@@ -173,16 +183,16 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
             ]
         
         series = ''
-        ctdi = round(dicom_im.metadata[0x0018, 0x9345].value, prec) if (0x0018, 0x9345) in dicom_im.metadata else ''
-        
+        ctdi = round(dicom_im.metadata[0x00189345].value, prec) if 0x00189345 in dicom_im.metadata else ''
+
         # Row of test results, in Excel-friendly format
         results_data = [f'{date[6:8]}.{date[4:6]}.{date[:4]}',
                         f'{time[:2]}:{time[2:4]}:{time[4:6]}',
                         series,
-                        int(dicom_im.metadata[0x0018, 0x0060].value),
-                        int(dicom_im.metadata[0x0018, 0x1152].value),
-                        dicom_im.metadata[0x0018, 0x1160].value,
-                        dicom_im.metadata[0x0018, 0x1210].value,
+                        int(dicom_im.metadata[0x00180060].value),
+                        int(dicom_im.metadata[0x00181152].value),
+                        dicom_im.metadata[0x00181160].value,
+                        dicom_im.metadata[0x00181210].value,
                         ctdi,
                         # Linearity, difference from reference
                         int(res['ctp404']['hu_rois']['Air']['difference']),
@@ -216,23 +226,85 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
                         round(mtfs[5], prec),
                         round(mtfs[6], prec),
                         ]
+    elif test == 'normi_13':
+        cols = ['Series date',
+                'Series time',
+                'Protocol',
+                'kVp',
+                'mAs',
+                'Filter type',
+                'Grid',
+                'Source-to-detector distance',
+                'Focal spot',
+                'Linearity: 0 mm Cu',  # Linearity
+                '0.30 mm Cu',
+                '0.65 mm Cu',
+                '1.00 mm Cu',
+                '1.40 mm Cu',
+                '1.85 mm Cu',
+                '2.30 mm Cu',
+                'Uniformity: maximum deviation from center',
+                'Low contrast: Median contrast',
+                'Low contrast: Median CNR',
+                '# Low contrast ROIs detected',
+                'MTF 80%',
+                'MTF 50%',
+                'MTF 30%',
+                ]
+
+        # Row of test results, in Excel-friendly format
+        imaging_parameters = [
+            dicom_im.metadata[0x00181030].value if 0x00181030 in dicom_im.metadata else '',  # Protocol
+            int(dicom_im.metadata[0x00180060].value) if 0x00180060 in dicom_im.metadata else '',  # kVp
+            int(dicom_im.metadata[0x00181152].value) if 0x00181152 in dicom_im.metadata else '',  # Exposure
+            dicom_im.metadata[0x00181160].value if 0x00181160 in dicom_im.metadata else '',  # Filter
+            dicom_im.metadata[0x00181166].value if 0x00181166 in dicom_im.metadata else '',  # Grid
+            int(dicom_im.metadata[0x00181110].value) if 0x00181110 in dicom_im.metadata else '',  # SDD
+            int(dicom_im.metadata[0x00181190].value) if 0x00181190 in dicom_im.metadata else '',  # Focal spot
+        ]
+
+        results_data = [f'{date[6:8]}.{date[4:6]}.{date[:4]}',
+                        f'{time[:2]}:{time[2:4]}:{time[4:6]}',
+                        imaging_parameters[0],
+                        imaging_parameters[1],
+                        imaging_parameters[2],
+                        imaging_parameters[3],
+                        imaging_parameters[4],
+                        imaging_parameters[5],
+                        imaging_parameters[6],
+                        # Linearity, integer values of mean exposure
+                        int(res['linearity']['cu_000'].mean),
+                        int(res['linearity']['cu_030'].mean),
+                        int(res['linearity']['cu_065'].mean),
+                        int(res['linearity']['cu_100'].mean),
+                        int(res['linearity']['cu_140'].mean),
+                        int(res['linearity']['cu_185'].mean),
+                        int(res['linearity']['cu_230'].mean),
+                        # Uniformity
+                        int(res['uniformity']['max_deviation']),
+                        # Low contrast
+                        round(res['median_contrast'], prec),
+                        round(res['median_cnr'], prec),
+                        res['num_contrast_rois_seen'],  # How many low-contrast ROIs detected
+                        # MTF
+                        round(res['mtf_lp_mm']['80'], prec),  # MTF 80%
+                        round(res['mtf_lp_mm']['50'], prec),  # MTF 50% (Half-power frequency)
+                        round(res['mtf_lp_mm']['30'], prec),  # MTF 30%
+                        ]
     else:
         raise NotImplementedError()
     
     # Compile results into dataframe
     results = pd.DataFrame(columns=cols)
     results.loc[0] = results_data
-  
-    
-    # Add a new row to the excel file
-    path_excel = str(save_path / f'Results_{patient}.xlsx')
-    
-    
-        
+
+    # Add a new row to the Excel file
+    path_excel = str(save_path / f'Normi13_{institution}_{station}_{dept}_{patient}.xlsx')
+
     # Check if a results file exists
     if os.path.isfile(path_excel):
         
-        # Check if the excel is opened
+        # Check if the Excel is opened
         if wait_user_close(path_excel):
             
             # Append to existing results file
