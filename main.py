@@ -20,7 +20,7 @@ from pylinac import (
     CatPhan604
     )
 
-from qa_analysis.constants import CustomCP504    
+from qa_analysis.constants import CustomCP504
 from qa_analysis.analysis import analyze_image
 from qa_analysis.utilities import map_network_drive, start_log
 
@@ -29,12 +29,13 @@ def main():
     # Input arguments and constants
     parser = argparse.ArgumentParser(
         description='Automated radiation therapy QA tests')
-    parser.add_argument('--data_path', type=Path, default='data')
-    parser.add_argument('--network_path', type=Path, default='share.txt')
-    parser.add_argument('--processed_path', type=Path, default='processed')
-    parser.add_argument('--save_path', type=Path, default='results')
-    parser.add_argument('--log_path', type=Path, default='logs/automated_qa.log', help='File for saving event logs.')
-    parser.add_argument('--file_types', type=tuple, default=('.dcm', '.tiff', '.tif'), help='File types listed for analysis.')
+    parser.add_argument('--data_path', type=Path, default='../data')
+    parser.add_argument('--network_path', type=Path, default='../share.txt')
+    parser.add_argument('--processed_path', type=Path, default='../processed')
+    parser.add_argument('--save_path', type=Path, default='../results')
+    parser.add_argument('--log_path', type=Path, default='../logs/automated_qa.log', help='File for saving event logs.')
+    parser.add_argument('--file_types', type=tuple, default=('.dcm', '.ima', '.tiff', '.tif'),
+                        help='File types listed for analysis.')
     parser.add_argument('--catphan_model', default=CustomCP504, 
                         choices=[CatPhan503, CatPhan504, CatPhan600, CatPhan604, CustomCP504], 
                         help='Catphan phantom model')

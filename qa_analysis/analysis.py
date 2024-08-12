@@ -17,7 +17,10 @@ from pathlib import Path
 from os.path import dirname
 import logging
 
-from qa_analysis.tests import drgs_test, drmlc_test, catphan_analysis, winston_analysis, acr_analysis, normi_13_analysis
+from qa_analysis.tests import (
+    drgs_test, drmlc_test, catphan_analysis, winston_analysis, acr_analysis,
+    normi_13_analysis, tor_18_analysis
+    )
 from qa_analysis.utilities import save_excel, move_file, remove_empty_dir, map_network_drive
 from qa_analysis.constants import (
     T2_DR_ROI_HAL, T2_GS_ROI_HAL, T3_MLC_ROI_HAL, 
@@ -125,8 +128,11 @@ def analyze_image(arg):
                     # Find Winston-Lutz images
                     test_images = detect_winston_tests(dcm_images[im_id], test_images)
 
-                    # Find CR images
+                    # Find Normi-13 images
                     test_images = detect_normi_13_tests(dcm_images[im_id], test_images)
+
+                    # Find TOR-18 images
+                    test_images = detect_tor_18_tests(dcm_images[im_id], test_images)
 
                 # T2/T3 test detected
                 if 't3_mlc' in test_images:
@@ -147,7 +153,11 @@ def analyze_image(arg):
                     # Run Winston-Lutz analysis
                     results = winston_analysis(test_images['winston'], arg)
                 elif 'normi_13' in test_images:
-                    results = normi_13_analysis(test_images['normi_13'], arg)
+                    for normi_13_im in test_images['normi_13']:
+                        _ = normi_13_analysis(normi_13_im, arg)
+                elif 'tor_18' in test_images:
+                    for tor_18_im in test_images['tor_18']:
+                        _ = tor_18_analysis(tor_18_im, arg)
                 # Here more tests could be run
                 else:
                     logger_a.info(f'Test not implemented for patient {patient}, date {date}')
@@ -156,7 +166,7 @@ def analyze_image(arg):
             # ValueError when running Winston analysis with incorrect images
             except (KeyError, TypeError, ValueError,
                     AttributeError, ZeroDivisionError, IndexError) as e:
-                logger_a.debug(f'Cannot analyse from measurement date {date} due to error {e}')
+                logger_a.info(f'Cannot analyse from patient {patient}, measurement date {date} due to error {e}')
 
     # List dicom files remaining in data path
     images = glob(str(arg.data_path / '**/*.*'), recursive=True)
@@ -265,9 +275,8 @@ def detect_catphan_tests(dcm_image, res_images):
         catphan_test2 = dcm_image.metadata[0x0008, 0x114a].value[0][0x0040, 0xa170].value[0][0x0008, 0x0104].value == ref_inst
         
         if catphan_test1 or catphan_test2:
-            
-            
-            # Save the analysis image if does not exist already
+
+            # Save the analysis image if it does not exist already
             if not 'catphan_linac' in res_images:
                 res_images['catphan_linac'] = dcm_image
     
@@ -341,8 +350,32 @@ def detect_winston_tests(dcm_image, res_images):
 def detect_normi_13_tests(dcm_image, res_images):
     # Modality should be CR
     modality = dcm_image.metadata[0x0008, 0x0060].value
-    if (modality == 'DX' or modality == 'CR') and 'cr' not in res_images:
-        res_images['normi_13'] = dcm_image
+    if (modality == 'DX' or modality == 'CR') and 'normi_13' not in res_images:
+        res_images['normi_13'] = [dcm_image]
+    elif (modality == 'DX' or modality == 'CR'):
+        res_images['normi_13'].append(dcm_image)
+
+    return res_images
+
+
+def detect_tor_18_tests(dcm_image, res_images):
+    # Modality should be XA
+    modality = dcm_image.metadata[0x0008, 0x0060].value
+    if modality == 'XA':
+        # The image should have the pixel spacing information for Pylinac, use 1 if not available
+        if 'PixelSpacing' not in dcm_image.metadata and 'ImagePlanePixelSpacing' not in dcm_image.metadata:
+            if 'ImagerPixelSpacing' in dcm_image.metadata:
+                dcm_image.metadata.PixelSpacing = dcm_image.metadata.ImagerPixelSpacing
+            else:
+                dcm_image.metadata.PixelSpacing = [1.0, 1.0]
+
+        # Save the image with new metadata
+        dcm_image.save(dcm_image.path)
+        # Add to test images
+        if 'tor_18' not in res_images:
+            res_images['tor_18'] = [dcm_image]
+        else:
+            res_images['tor_18'].append(dcm_image)
 
     return res_images
 

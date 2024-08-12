@@ -4,15 +4,14 @@ Created on Mon Apr 22 10:32:35 2024
 
 @author: rytkysan
 """
-from pylinac import DRGS, DRMLC, WinstonLutz, ACRMRILarge
+from pylinac import DRGS, DRMLC, WinstonLutz, ACRMRILarge, LeedsTOR, image
 import numpy as np
 import os
 import logging
 from pathlib import Path
 from time import time
 
-from pylinac import image
-from natiivi_lv.normi13 import Normi13
+from normi13_qa.normi13 import Normi13
 
 from qa_analysis.utilities import wait_user_close, move_file, save_excel
 
@@ -42,6 +41,8 @@ def drgs_test(mlc, open_im, tol=1.5, savepath=None, pdf=False, plot=False, preci
         Sets the size for analysis segments in mm.
     roi: dict, optional
         Sets the offset positions and names for analysis segments.
+    rep_dir: str, optional
+        Directory for saving report images. The default is 'T2-T3 reports'.
     Returns
     -------
     dict
@@ -65,7 +66,6 @@ def drgs_test(mlc, open_im, tol=1.5, savepath=None, pdf=False, plot=False, preci
     # Plot figures
     if plot:
         drgs.plot_analyzed_image()
-    
     
     # Save results
     if pdf and savepath is not None:
@@ -110,7 +110,8 @@ def drmlc_test(mlc, open_im, tol=1.5, savepath=None, pdf=False, plot=False, prec
         Sets the size for analysis segments in mm.
     roi: dict, optional
         Sets the offset positions and names for analysis segments.
-
+    rep_dir: str, optional
+        Directory for saving report images. The default is 'T2-T3 reports'.
     Returns
     -------
     dict
@@ -342,7 +343,6 @@ def winston_analysis(im, args, pdf=True, plot=False, rep_dir='Winston-Lutz repor
 
 
 def normi_13_analysis(im, args):
-
     # Test logger
     logger_t = logging.getLogger('qa.test')
     logger_t.info(f"Running Normi-13 analysis for {Path(im.path).name}")
@@ -368,3 +368,37 @@ def normi_13_analysis(im, args):
     move_file(im.path, processed_path)
 
     return n_13.results
+
+
+def tor_18_analysis(im, args, pdf=True, rep_dir='TOR-18 reports'):
+
+    # Test logger
+    logger_t = logging.getLogger('qa.test')
+    logger_t.info(f"Running TOR-18 analysis for {Path(im.path).name}")
+
+    modality = 'TOR-18'
+    tor_18 = LeedsTOR(im.path)
+    tor_18.analyze()
+
+    # Plot figures
+    if args.plot:
+        tor_18.plot_analyzed_image()
+
+    # Save results
+    if pdf:
+        report_name = f'{im.metadata.PatientID}_{im.metadata.StationName}_{im.metadata.SeriesDate}_{im.metadata.SeriesTime}_TOR-18.pdf'
+        report_name = report_name.replace(':', '_')
+        (args.save_path / rep_dir).mkdir(exist_ok=True)  # Make reports directory
+        path = str(args.save_path / rep_dir / report_name)
+        if wait_user_close(path):
+            tor_18.publish_pdf(path, notes=[f'Device: {im.metadata.StationName}'])
+
+    # Save results to Excel
+    results = tor_18.results_data(as_dict=True)
+    save_excel(im, results, save_path=args.save_path / modality, test='tor_18')
+
+    # Move file
+    processed_path = im.path.replace(args.data_path.stem, f'{args.processed_path.stem}/{modality}' )
+    move_file(im.path, processed_path)
+
+    return results

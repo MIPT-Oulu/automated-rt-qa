@@ -96,8 +96,7 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
     time = dicom_im.metadata[0x00080031].value
     institution = dicom_im.metadata[0x00080080].value
     station = dicom_im.metadata[0x00081010].value
-    dept = dicom_im.metadata[0x00081040].value
-    patient = dicom_im.metadata[0x00100020].value
+    patient = dicom_im.metadata[0x00100020].value.replace('.', '').replace(':', '')
 
     save_path.mkdir(exist_ok=True, parents=True)
     
@@ -291,6 +290,50 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
                         round(res['mtf_lp_mm']['50'], prec),  # MTF 50% (Half-power frequency)
                         round(res['mtf_lp_mm']['30'], prec),  # MTF 30%
                         ]
+    elif test == 'tor_18':
+        cols = ['Series date',
+                'Series time',
+                'Protocol',
+                'kVp',
+                'DAP',
+                'Source-ro-patient distance',
+                'Source-to-detector distance',
+                'Percent integral uniformity',
+                'Low contrast: Median contrast',
+                'Low contrast: Median CNR',
+                '# Low contrast ROIs detected',
+                'MTF 80%',
+                'MTF 50%',
+                'MTF 30%',
+                ]
+
+        # Row of test results, in Excel-friendly format
+        imaging_parameters = [
+            dicom_im.metadata[0x00181030].value if 0x00181030 in dicom_im.metadata else '',  # Protocol
+            int(dicom_im.metadata[0x00180060].value) if 0x00180060 in dicom_im.metadata else '',  # kVp
+            round(dicom_im.metadata[0x0018115e].value, prec) if 0x0018115e in dicom_im.metadata else '',  # DAP
+            int(dicom_im.metadata[0x00181111].value) if 0x00181111 in dicom_im.metadata else '',  # SPD
+            int(dicom_im.metadata[0x00181110].value) if 0x00181110 in dicom_im.metadata else '',  # SDD
+        ]
+
+        results_data = [f'{date[6:8]}.{date[4:6]}.{date[:4]}',
+                        f'{time[:2]}:{time[2:4]}:{time[4:6]}',
+                        imaging_parameters[0],
+                        imaging_parameters[1],
+                        imaging_parameters[2],
+                        imaging_parameters[3],
+                        imaging_parameters[4],
+                        # Uniformity
+                        round(res['percent_integral_uniformity'], prec),
+                        # Low contrast
+                        round(res['median_contrast'], prec),
+                        round(res['median_cnr'], prec),
+                        res['num_contrast_rois_seen'],  # How many low-contrast ROIs detected
+                        # MTF
+                        round(res['mtf_lp_mm'][0]['80'], prec),  # MTF 80%
+                        round(res['mtf_lp_mm'][1]['50'], prec),  # MTF 50% (Half-power frequency)
+                        round(res['mtf_lp_mm'][2]['30'], prec),  # MTF 30%
+                        ]
     else:
         raise NotImplementedError()
     
@@ -299,7 +342,8 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
     results.loc[0] = results_data
 
     # Add a new row to the Excel file
-    path_excel = str(save_path / f'Normi13_{institution}_{station}_{dept}_{patient}.xlsx')
+    #path_excel = str(save_path / f'Normi13_{institution}_{station}_{patient}.xlsx')
+    path_excel = str(save_path / f'Normi13_{institution}_{patient}.xlsx')
 
     # Check if a results file exists
     if os.path.isfile(path_excel):
@@ -312,7 +356,7 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
                 
                 # Create a new sheet to Excel
                 if not test in writer.book:
-                    results.to_excel(writer, sheet_name=test, index=None)
+                    results.to_excel(writer, sheet_name=test, index=False)
                 
                 # Find if the results row exists
                 if find_matching_row(writer.book[test], results):
@@ -331,7 +375,7 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
                     
                 # Continue from the next row
                 results.to_excel(writer, sheet_name=test, 
-                                 header=None, index=None, startrow=start)
+                                 header=False, index=False, startrow=start)
                 
         # After timeout, skip saving the results excel
         else:        
@@ -340,20 +384,25 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
     # Create new results file
     else:            
         with pd.ExcelWriter(path_excel, engine='openpyxl') as writer:    
-            results.to_excel(writer, sheet_name=test, index=None)
+            results.to_excel(writer, sheet_name=test, index=False)
 
 
-def move_file(src: str, dst: str, overwrite=True):
+
+
+def move_file(src: str, dst: str, overwrite: bool = True):
     """
     Moves the given file to a new destination. 
     Creates any folders that are needed for the destination.
 
     Parameters
     ----------
+
     src : str
         File to be moved.
     dst : str
         Destination for the file.
+    overwrite : bool
+        Check for overwriting the existing file.
     Returns
     -------
     None.
@@ -383,7 +432,8 @@ def move_file(src: str, dst: str, overwrite=True):
     else:
         # Move file
         os.rename(src, dst)
-        
+
+
 def remove_empty_directory(directory: Path):
     """
     Remove empty directories in a given path. Deprecated.
@@ -406,14 +456,15 @@ def remove_empty_directory(directory: Path):
             # Remove empty directory
             if len(os.listdir(item)) == 0:
                 os.rmdir(item)
-                
-def remove_empty_dir(pathlib_root_dir : Path):
+
+
+def remove_empty_dir(pathlib_root_dir: Path):
     """
     Recursively remove empty directories in a given path.
 
     Parameters
     ----------
-    directory : Path
+    pathlib_root_dir : Path
         Path for removing empty directories.
 
     Returns
@@ -423,20 +474,20 @@ def remove_empty_dir(pathlib_root_dir : Path):
     """
     
     # List all directories recursively and sort them by path, longest first
-    L = sorted(
+    dir_list = sorted(
         pathlib_root_dir.glob("**"),
         key=lambda p: len(str(p)),
         reverse=True,
     )
     # Do not remove the parent directory
-    if pathlib_root_dir in L:
-        L.remove(pathlib_root_dir)
+    if pathlib_root_dir in dir_list:
+        dir_list.remove(pathlib_root_dir)
     
-    for pdir in L:
-      try:
-        pdir.rmdir()  # Remove directory if empty
-      except OSError:
-        continue  # Catch and continue if non-empty
+    for pdir in dir_list:
+        try:
+            pdir.rmdir()  # Remove directory if empty
+        except OSError:
+            continue  # Catch and continue if non-empty
         
     
 def wait_user_close(path_file, retry_time=5, timeout=120):
@@ -478,12 +529,12 @@ def wait_user_close(path_file, retry_time=5, timeout=120):
         except PermissionError:                
             logger_u.info(path_file, ' is already opened. Waiting user to close...')
             sleep(retry_time)
-            
-            
+
             if time() - s_time > timeout * 60:
                 logger_u.debug(f'Timeout of {timeout} minutes has passed. Returning...')
                 return False
     return True
+
 
 def find_matching_row(worksheet, compare_row):
     """
@@ -511,4 +562,3 @@ def find_matching_row(worksheet, compare_row):
         if compare_row == row:
             return True
     return False
-
