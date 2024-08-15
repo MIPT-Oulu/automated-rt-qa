@@ -214,9 +214,9 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
                         round(res['ctp404']['low_contrast_visibility'], prec),  # Contrast of LDPE and Poly in the linearity module
                         res['ctp515']['num_rois_seen'],  # How many low-contrast ROIs detected
                         # MTF
-                        round(res['ctp528']['mtf_lp_mm'][80], prec), # MTF 80%
-                        round(res['ctp528']['mtf_lp_mm'][50], prec), # MTF 50% (Half-power frequency)
-                        round(res['ctp528']['mtf_lp_mm'][30], prec), # MTF 30%
+                        round(res['ctp528']['mtf_lp_mm']['80'], prec),  # MTF 80%
+                        round(res['ctp528']['mtf_lp_mm']['50'], prec),  # MTF 50% (Half-power frequency)
+                        round(res['ctp528']['mtf_lp_mm']['30'], prec),  # MTF 30%
                         round(mtfs[0], prec), # MTF values for specific line pairs
                         round(mtfs[1], prec),
                         round(mtfs[2], prec),
@@ -342,8 +342,8 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
     results.loc[0] = results_data
 
     # Add a new row to the Excel file
-    #path_excel = str(save_path / f'Normi13_{institution}_{station}_{patient}.xlsx')
-    path_excel = str(save_path / f'Normi13_{institution}_{patient}.xlsx')
+    save_path.mkdir(exist_ok=True, parents=True)
+    path_excel = str(save_path / f'{patient}.xlsx')
 
     # Check if a results file exists
     if os.path.isfile(path_excel):

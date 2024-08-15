@@ -153,7 +153,7 @@ def drmlc_test(mlc, open_im, tol=1.5, savepath=None, pdf=False, plot=False, prec
 
 
 def catphan_analysis(im, args, pdf=True, plot=False, tolerances=dict(), 
-                     rep_dir='Catphan reports', timeout=5):
+                     rep_dir='Reports', timeout=5):
     """
     
 
@@ -190,6 +190,7 @@ def catphan_analysis(im, args, pdf=True, plot=False, tolerances=dict(),
     while len(os.listdir(analysis_path)) > 0 and start - time() < timeout * 60:
         # Run the analysis for Catphan model assigned in args
         cbct = args.catphan_model(analysis_path)
+        modality = 'Catphan'
        
         # Use the test tolerances from constants.py
         cbct.analyze(**tolerances)
@@ -218,16 +219,15 @@ def catphan_analysis(im, args, pdf=True, plot=False, tolerances=dict(),
         # Save results
         if pdf:
             report_name = f'{im.metadata.PatientID}_{im.metadata.SeriesDate}_{im.metadata.SeriesTime}_Catphan.pdf'
-            (args.save_path / rep_dir).mkdir(exist_ok=True)  # Make reports directory
-            path = str(args.save_path / rep_dir / report_name)
+            (args.save_path / modality / rep_dir).mkdir(exist_ok=True, parents=True)  # Make reports directory
+            path = str(args.save_path / modality / rep_dir / report_name)
             if wait_user_close(path):
                 cbct.publish_pdf(path, notes=[f'Device: {im.metadata.StationName}', f'Operator: {im.metadata.OperatorsName}'])
         
         # Save Catphan analysis to Excel file
-        save_excel(im, res, save_path=args.save_path, test='Catphan')
+        save_excel(im, res, save_path=args.save_path / modality, test='Catphan')
                 
         # Move analyzed files to the processed folder, create subfolder by modality
-        modality = 'Catphan'
         # Assume that there is one folder for patient name/ID
         parent_folder = Path(im.path).parent.parent.stem
         dicom_stack = image.DicomImageStack(analysis_path)
@@ -370,7 +370,7 @@ def normi_13_analysis(im, args):
     return n_13.results
 
 
-def tor_18_analysis(im, args, pdf=True, rep_dir='TOR-18 reports'):
+def tor_18_analysis(im, args, pdf=True, rep_dir='Reports'):
 
     # Test logger
     logger_t = logging.getLogger('qa.test')
@@ -388,8 +388,8 @@ def tor_18_analysis(im, args, pdf=True, rep_dir='TOR-18 reports'):
     if pdf:
         report_name = f'{im.metadata.PatientID}_{im.metadata.StationName}_{im.metadata.SeriesDate}_{im.metadata.SeriesTime}_TOR-18.pdf'
         report_name = report_name.replace(':', '_')
-        (args.save_path / rep_dir).mkdir(exist_ok=True)  # Make reports directory
-        path = str(args.save_path / rep_dir / report_name)
+        (args.save_path / modality / rep_dir).mkdir(exist_ok=True)  # Make reports directory
+        path = str(args.save_path / modality / rep_dir / report_name)
         if wait_user_close(path):
             tor_18.publish_pdf(path, notes=[f'Device: {im.metadata.StationName}'])
 
@@ -398,7 +398,7 @@ def tor_18_analysis(im, args, pdf=True, rep_dir='TOR-18 reports'):
     save_excel(im, results, save_path=args.save_path / modality, test='tor_18')
 
     # Move file
-    processed_path = im.path.replace(args.data_path.stem, f'{args.processed_path.stem}/{modality}' )
+    processed_path = im.path.replace(args.data_path.stem, f'{args.processed_path.stem}/{modality}')
     move_file(im.path, processed_path)
 
     return results
