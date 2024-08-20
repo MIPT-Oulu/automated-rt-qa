@@ -16,10 +16,11 @@ def start_log(path):
     # Logging parameters
     month = datetime.today().strftime('_%Y_%m')  # Name log files using current year and month
     logging.basicConfig(filename=f'{path.parent}/{path.stem}{month}{path.suffix}', 
-                        level=logging.DEBUG, 
+                        level=logging.INFO,
                         format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
                         datefmt='%m-%d %H:%M',
-                        filemode='a'  # a = append to existing file, w = overwrite
+                        filemode='a',  # a = append to existing file, w = overwrite
+                        force=True  # Force to use this handler instead of root handlers
                         )
     
     # Define a console Handler which writes INFO messages or higher
@@ -295,6 +296,7 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
                 'Series time',
                 'Protocol',
                 'kVp',
+                'mA',
                 'DAP',
                 'Source-ro-patient distance',
                 'Source-to-detector distance',
@@ -311,6 +313,7 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
         imaging_parameters = [
             dicom_im.metadata[0x00181030].value if 0x00181030 in dicom_im.metadata else '',  # Protocol
             int(dicom_im.metadata[0x00180060].value) if 0x00180060 in dicom_im.metadata else '',  # kVp
+            int(dicom_im.metadata[0x00181151].value) if 0x00181151 in dicom_im.metadata else '',  # mA
             round(dicom_im.metadata[0x0018115e].value, prec) if 0x0018115e in dicom_im.metadata else '',  # DAP
             int(dicom_im.metadata[0x00181111].value) if 0x00181111 in dicom_im.metadata else '',  # SPD
             int(dicom_im.metadata[0x00181110].value) if 0x00181110 in dicom_im.metadata else '',  # SDD
@@ -323,6 +326,7 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
                         imaging_parameters[2],
                         imaging_parameters[3],
                         imaging_parameters[4],
+                        imaging_parameters[5],
                         # Uniformity
                         round(res['percent_integral_uniformity'], prec),
                         # Low contrast

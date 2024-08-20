@@ -10,6 +10,7 @@ import os
 import logging
 from pathlib import Path
 from time import time
+from warnings import filterwarnings
 
 from normi13_qa.normi13 import Normi13
 
@@ -222,7 +223,7 @@ def catphan_analysis(im, args, pdf=True, plot=False, tolerances=dict(),
             (args.save_path / modality / rep_dir).mkdir(exist_ok=True, parents=True)  # Make reports directory
             path = str(args.save_path / modality / rep_dir / report_name)
             if wait_user_close(path):
-                cbct.publish_pdf(path, notes=[f'Device: {im.metadata.StationName}', f'Operator: {im.metadata.OperatorsName}'])
+                cbct.publish_pdf(path, notes=[f'Device: {im.metadata.StationName}'])
         
         # Save Catphan analysis to Excel file
         save_excel(im, res, save_path=args.save_path / modality, test='Catphan')
@@ -376,6 +377,9 @@ def tor_18_analysis(im, args, pdf=True, rep_dir='Reports'):
     logger_t = logging.getLogger('qa.test')
     logger_t.info(f"Running TOR-18 analysis for {Path(im.path).name}")
 
+    # Filter out unnecessary warnings
+    filterwarnings("ignore", category=UserWarning)
+
     modality = 'TOR-18'
     tor_18 = LeedsTOR(im.path)
     tor_18.analyze()
@@ -388,7 +392,7 @@ def tor_18_analysis(im, args, pdf=True, rep_dir='Reports'):
     if pdf:
         report_name = f'{im.metadata.PatientID}_{im.metadata.StationName}_{im.metadata.SeriesDate}_{im.metadata.SeriesTime}_TOR-18.pdf'
         report_name = report_name.replace(':', '_')
-        (args.save_path / modality / rep_dir).mkdir(exist_ok=True)  # Make reports directory
+        (args.save_path / modality / rep_dir).mkdir(exist_ok=True, parents=True)  # Make reports directory
         path = str(args.save_path / modality / rep_dir / report_name)
         if wait_user_close(path):
             tor_18.publish_pdf(path, notes=[f'Device: {im.metadata.StationName}'])

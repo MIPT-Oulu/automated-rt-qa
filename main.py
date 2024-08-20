@@ -12,6 +12,7 @@ from watchdog.events import PatternMatchingEventHandler
 from pathlib import Path
 from time import sleep
 import os
+from warnings import filterwarnings
 from tqdm import tqdm
 from pylinac import (
     CatPhan503,
@@ -54,6 +55,9 @@ def main():
     # Map network drive with correct password
     if arg.network_path is not None:
         map_network_drive(arg.network_path)
+
+    # Mute unnecessary warnings
+    filterwarnings("ignore", message="The MTF does not drop monotonically; be sure the ROIs are correctly aligned.")
     
     # --- Watch dog ---
     # Define Watchdog event handler
