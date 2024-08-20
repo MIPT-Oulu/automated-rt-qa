@@ -229,6 +229,8 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
     elif test == 'normi_13':
         cols = ['Series date',
                 'Series time',
+                'Detector ID',
+                'Detector description',
                 'Protocol',
                 'kVp',
                 'mAs',
@@ -254,6 +256,8 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
 
         # Row of test results, in Excel-friendly format
         imaging_parameters = [
+            dicom_im.metadata[0x0018700a].value if 0x0018700a in dicom_im.metadata else '',  # Detector ID
+            dicom_im.metadata[0x00187006].value if 0x00187006 in dicom_im.metadata else '',  # Detector description
             dicom_im.metadata[0x00181030].value if 0x00181030 in dicom_im.metadata else '',  # Protocol
             int(dicom_im.metadata[0x00180060].value) if 0x00180060 in dicom_im.metadata else '',  # kVp
             int(dicom_im.metadata[0x00181152].value) if 0x00181152 in dicom_im.metadata else '',  # Exposure
@@ -272,6 +276,8 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
                         imaging_parameters[4],
                         imaging_parameters[5],
                         imaging_parameters[6],
+                        imaging_parameters[7],
+                        imaging_parameters[8],
                         # Linearity, integer values of mean exposure
                         int(res['linearity']['cu_000'].mean),
                         int(res['linearity']['cu_030'].mean),
