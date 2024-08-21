@@ -34,6 +34,13 @@ T3_MLC_ROI_HAL = {
     '+5.6 cm': {'offset_mm': 56},
     '+11.2 cm': {'offset_mm': 112}}
 
+# Tolerances for Normi 13 analysis
+NORMI13_TOLERANCES = {
+    'high_contrast_threshold': 0.5,
+    'low_contrast_threshold': 0.05,
+    'visibility_threshold': 0.0025  # Threshold for "seeing" the ROI
+    }
+
 # Tolerances for Catphan analysis
 
 CATPHAN_TOLERANCES = {

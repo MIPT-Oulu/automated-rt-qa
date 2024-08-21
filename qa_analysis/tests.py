@@ -15,6 +15,7 @@ from warnings import filterwarnings
 from normi13_qa.normi13 import Normi13
 
 from qa_analysis.utilities import wait_user_close, move_file, save_excel
+from qa_analysis.constants import NORMI13_TOLERANCES
 
 
 def drgs_test(mlc, open_im, tol=1.5, savepath=None, pdf=False, plot=False, precision=5,
@@ -350,7 +351,7 @@ def normi_13_analysis(im, args):
 
     modality = 'Normi 13'
     n_13 = Normi13(im.path, plot=args.plot, fig_path=args.save_path / modality / 'Figures')
-    n_13.analyze()
+    n_13.analyze(**NORMI13_TOLERANCES)
 
     # Get results
     results = n_13.results_data(as_dict=True)
