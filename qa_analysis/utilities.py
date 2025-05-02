@@ -5,21 +5,25 @@ import logging
 import pandas as pd
 from pathlib import Path
 from time import sleep, time
+from datetime import datetime
 from subprocess import run
+import unicodedata
+import re
+import numpy as np
 
 
 def start_log(path):
+    
     # Log folder
     path.parent.mkdir(exist_ok=True)
     
     # Logging parameters
-    month = datetime.today().strftime('_%Y_%m')  # Name log files using current year and month
+    month = datetime.today().strftime('_%Y_%m')
     logging.basicConfig(filename=f'{path.parent}/{path.stem}{month}{path.suffix}', 
-                        level=logging.DEBUG, 
+                        level=logging.INFO, 
                         format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
                         datefmt='%m-%d %H:%M',
-                        filemode='a'  # a = append to existing file, w = overwrite
-                        )
+                        filemode='a')
     
     # Define a console Handler which writes INFO messages or higher
     console = logging.StreamHandler()
@@ -127,6 +131,41 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
                             t2_res['passed'], t2_res['max_deviation_percent'], 
                             t3_res['passed'], t3_res['max_deviation_percent'],                            
                             t2dr_res['abs_mean_deviation'], t2_res['abs_mean_deviation'], t3_res['abs_mean_deviation'],]  
+       
+    # Results column headers
+    elif test == 'RAD':
+        # Round the results to five digits
+        res_180 = res[0]
+        
+        # Columns should be: Series date, Series time, Patient ID, Test, Pass/Fail, Max_deviation, Average_deviation
+        cols = ['Series date', 
+                'Series time', 
+                'RAD Pass/Fail', 'RAD Max deviation', 'RAD Average deviation']
+
+        # Row of test results, in Excel-friendly format
+        results_data = [f'{date[6:8]}.{date[4:6]}.{date[:4]}',
+                        f'{time[:2]}:{time[2:4]}:{time[4:6]}',
+                        res_180['passed'], res_180['max_deviation_percent'],
+                        res_180['abs_mean_deviation']]  
+        
+    # Results column headers
+    elif test == 'RAD_fixed_angle':
+        # Round the results to five digits
+        res_0, res_90 = res[0], res[1]     
+        
+        # Columns should be: Series date, Series time, Patient ID, Test, Pass/Fail, Max_deviation, Average_deviation
+        cols = ['Series date', 
+                'Series time', 
+                'RAD0 Pass/Fail', 'RAD0 Max deviation',
+                'RAD90 Pass/Fail', 'RAD90 Max deviation',
+                'RAD0 Average deviation', 'RAD90 Average deviation',]
+
+        # Row of test results, in Excel-friendly format
+        results_data = [f'{date[6:8]}.{date[4:6]}.{date[:4]}',
+                        f'{time[:2]}:{time[2:4]}:{time[4:6]}',
+                        res_0['passed'], res_0['max_deviation_percent'],
+                        res_90['passed'], res_90['max_deviation_percent'], 
+                        res_0['abs_mean_deviation'], res_90['abs_mean_deviation']]  
             
     elif test == 'Catphan':
         tols = [res['ctp404']['hu_tolerance'], 
@@ -136,9 +175,19 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
         
         # TODO what if constants are changed (tolerances)?
         lps, mtfs = zip(*res['mtf'].items()) 
+        # Ensure that the length of the mtfs does not change
+        exp_length = 7
+        if len(lps) < exp_length:
+            lps = lps + tuple(0 for _ in range(exp_length - len(lps)))
+            mtfs = mtfs + tuple(0 for _ in range(exp_length - len(mtfs)))
+        exp_length_nps = 46
+        if len(res['nps']) < exp_length_nps:
+            res['nps'] = np.concatenate([res['nps'], np.zeros(exp_length_nps) - len(res['nps'])])
+            
         cols = ['Series date', 
                 'Series time', 
                 'Series description',
+                'Station name',
                 'KVP',
                 'mAs',
                 'Filter type',
@@ -170,15 +219,21 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
                 f'MTF {lps[4]} lp/mm',
                 f'MTF {lps[5]} lp/mm',
                 f'MTF {lps[6]} lp/mm',
+                'NPS_avg_noise_power',
+                'NPS_max_noise_power_frequency',
             ]
+        cols.extend([f'CNR {i}' for i in res['ctp515']['roi_results'].keys()])
+        cols.extend([f'NPS {i}' for i in range(len(res['nps']))])       
         
-        series = ''
+        series = dicom_im.metadata[0x0008, 0x103e].value if (0x0008, 0x103e) in dicom_im.metadata else ''
         ctdi = round(dicom_im.metadata[0x0018, 0x9345].value, prec) if (0x0018, 0x9345) in dicom_im.metadata else ''
+        station = dicom_im.metadata[0x0008, 0x1010].value if (0x0008, 0x1010) in dicom_im.metadata else ''
         
         # Row of test results, in Excel-friendly format
         results_data = [f'{date[6:8]}.{date[4:6]}.{date[:4]}',
                         f'{time[:2]}:{time[2:4]}:{time[4:6]}',
                         series,
+                        station,
                         int(dicom_im.metadata[0x0018, 0x0060].value),
                         int(dicom_im.metadata[0x0018, 0x1152].value),
                         dicom_im.metadata[0x0018, 0x1160].value,
@@ -215,7 +270,60 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
                         round(mtfs[4], prec),
                         round(mtfs[5], prec),
                         round(mtfs[6], prec),
+                        round(res['avg_noise_power'], prec),
+                        round(res['max_noise_power_frequency'], prec),
                         ]
+        results_data.extend([round(i['cnr'], prec) for i in res['ctp515']['roi_results'].values()])
+        results_data.extend(res['nps'].round(prec))
+        
+    elif test == 'CIRS':
+        cols = ['Series date', 
+                'Series time', 
+                'Series description',
+                'KVP',
+                'mAs',
+                'Filter type',
+                'Convolution kernel',
+                'CTDIvol',
+                ]
+        # Median values
+        header = list(res['rois'].keys())
+        header[0] += ' (Median value)'
+        cols.extend(header)
+        # STD
+        header = list(res['rois'].keys())
+        header[0] += ' (STD)'
+        cols.extend(header)
+        # Mean values
+        header = list(res['rois'].keys())
+        header[0] += ' (Mean value)'
+        cols.extend(header)
+        
+        series = dicom_im.metadata[0x0008, 0x103e].value if (0x0008, 0x103e) in dicom_im.metadata else ''
+        ctdi = round(dicom_im.metadata[0x0018, 0x9345].value, prec) if (0x0018, 0x9345) in dicom_im.metadata else ''
+        
+        # Row of test results, in Excel-friendly format
+        results_data = [f'{date[6:8]}.{date[4:6]}.{date[:4]}',
+                        f'{time[:2]}:{time[2:4]}:{time[4:6]}',
+                        series,
+                        int(dicom_im.metadata[0x0018, 0x0060].value),
+                        int(dicom_im.metadata[0x0018, 0x1152].value),
+                        dicom_im.metadata[0x0018, 0x1160].value,
+                        dicom_im.metadata[0x0018, 0x1210].value,
+                        ctdi,                        
+                        ]
+        
+        # TODO The lists could change with configuration
+        median = []
+        std = []
+        mean = []
+        for r in res['rois'].values():
+            median.append(r['median'])
+            std.append(r['std'])
+            mean.append(r['mean'])
+        results_data.extend(median)
+        results_data.extend(std)
+        results_data.extend(mean)
     else:
         raise NotImplementedError()
     
@@ -225,7 +333,7 @@ def save_excel(dicom_im, res, save_path, test='T2-T3', prec=5):
   
     
     # Add a new row to the excel file
-    path_excel = str(save_path / f'Results_{patient}.xlsx')
+    path_excel = str(save_path / slugify(f'Results_{patient}')) + '.xlsx'
     
     
         
@@ -351,11 +459,16 @@ def remove_empty_dir(pathlib_root_dir : Path):
     """
     
     # List all directories recursively and sort them by path, longest first
-    L = sorted(
-        pathlib_root_dir.glob("**"),
-        key=lambda p: len(str(p)),
-        reverse=True,
-    )
+    try:
+        L = sorted(
+            pathlib_root_dir.glob("**"),
+            key=lambda p: len(str(p)),
+            reverse=True,
+        )
+    # No directories
+    except OSError:
+        return
+        
     # Do not remove the parent directory
     if pathlib_root_dir in L:
         L.remove(pathlib_root_dir)
@@ -439,4 +552,20 @@ def find_matching_row(worksheet, compare_row):
         if compare_row == row:
             return True
     return False
+
+def slugify(value, allow_unicode=False):
+    """
+    Taken from https://github.com/django/django/blob/master/django/utils/text.py
+    Convert to ASCII if 'allow_unicode' is False. Convert spaces or repeated
+    dashes to single dashes. Remove characters that aren't alphanumerics,
+    underscores, or hyphens. Convert to lowercase. Also strip leading and
+    trailing whitespace, dashes, and underscores.
+    """
+    value = str(value)
+    if allow_unicode:
+        value = unicodedata.normalize('NFKC', value)
+    else:
+        value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode('ascii')
+    value = re.sub(r'[^\w\s-]', '', value.lower())
+    return re.sub(r'[-\s]+', '-', value).strip('-_')
 

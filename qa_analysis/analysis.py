@@ -7,6 +7,8 @@ Created on Mon Apr 22 10:32:35 2024
 Known issues: 
     - Identification of faulty image (cropped field)
     - Other data types than dicom
+    - Working with two mixed CT series
+    - Does not analyze multiple CT series from same date
     - Pylinac 3.22 does not sort multiple series correctly. Issue raised:
         https://github.com/jrkerns/pylinac/issues/494
 """
@@ -17,11 +19,13 @@ from pathlib import Path
 from os.path import dirname
 import logging
 
-from qa_analysis.tests import drgs_test, drmlc_test, catphan_analysis, winston_analysis, acr_analysis
+from qa_analysis.tests import (
+    drgs_test, drmlc_test, catphan_analysis, 
+    winston_analysis, acr_analysis, cirs_analysis, rad_test)
 from qa_analysis.utilities import save_excel, move_file, remove_empty_dir, map_network_drive
 from qa_analysis.constants import (
-    T2_DR_ROI_HAL, T2_GS_ROI_HAL, T3_MLC_ROI_HAL, 
-    DRGS_TOL, DRMLC_TOL, CATPHAN_CBCT_TOLERANCES, CATPHAN_TOLERANCES
+    T2_DR_ROI_HAL, T2_GS_ROI_HAL, T3_MLC_ROI_HAL, DRGS_TOL, DRMLC_TOL,
+    CATPHAN_CBCT_TOLERANCES, CATPHAN_TOLERANCES
     )
     
 
@@ -112,7 +116,7 @@ def analyze_image(arg):
                     test_images = detect_t2_t3_tests(dcm_images[im_id], test_images) 
                     
                     # Find Catphan images
-                    test_images = detect_catphan_tests(dcm_images[im_id], test_images)
+                    test_images = detect_ct_tests(dcm_images[im_id], test_images)
                     
                     # Find ACR images
                     test_images = detect_acr_tests(dcm_images[im_id], test_images, arg)
@@ -121,15 +125,18 @@ def analyze_image(arg):
                     test_images = detect_winston_tests(dcm_images[im_id], test_images)
                 
                 # T2/T3 test detected
-                if 't3_mlc' in test_images:
+                if 't3_mlc' in test_images or 'rad_180_open' in test_images:
                     # Run T2/T3 analysis
                     run_t2_t3_tests(test_images, arg)
+                if 'cirs' in test_images:
+                    # Run CIRS electron density analysis
+                    results = cirs_analysis(test_images['cirs'], arg)
                 elif 'catphan' in test_images:
-                    # Run Caphan analysis
+                    # Run Catphan analysis
                     results = catphan_analysis(test_images['catphan'], arg, 
                                                tolerances=CATPHAN_TOLERANCES) 
                 elif 'catphan_linac' in test_images:
-                    # Run Caphan analysis
+                    # Run Catphan analysis
                     results = catphan_analysis(test_images['catphan_linac'], arg, 
                                                tolerances=CATPHAN_CBCT_TOLERANCES) 
                 elif 'acr' in test_images:
@@ -142,10 +149,18 @@ def analyze_image(arg):
                 else:
                     logger_a.info(f'Test not implemented for patient {patient}, date {date}')
     
+            # CIRS analysis could run into TypeError with Catphan data
+            except TypeError as e:
+                logger_a.info(f'Cannot analyse from measurement date {date} due to error {e}. Retrying with Catphan analysis')
+                try:
+                    _ = catphan_analysis(test_images['cirs'], arg, 
+                                         tolerances=CATPHAN_TOLERANCES) 
+                except (KeyError, ValueError, ZeroDivisionError, TypeError) as e:
+                    logger_a.info(f'Cannot analyse from measurement date {date} due to error {e}')
             # Missing dictionary data raises KeyError
             # ValueError when running Winston analysis with incorrect images
-            except (KeyError, ValueError, ZeroDivisionError) as e:
-                logger_a.debug(f'Cannot analyse from measurement date {date} due to error {e}')
+            except (KeyError, ValueError, ZeroDivisionError, IndexError) as e:
+                logger_a.info(f'Cannot analyse from measurement date {date} due to error {e}')
                 
     
     
@@ -229,10 +244,26 @@ def detect_t2_t3_tests(dcm_image, res_images):
     # T3 MLC
     elif ('MV_32' in rt_label or 'MV_40' in rt_label) and not (0x5000, 0x2500) in dcm_image.metadata:
         res_images['t3_mlc'] = dcm_image
-
+    # RAD
+    elif 'MV_181' in rt_label:
+        res_images['rad_180_open'] = dcm_image
+    elif 'MV_179' in rt_label:
+        res_images['rad_180_mlc'] = dcm_image
+    # These can get mixed up, but the VMAT test should separate open from mlc
+    elif 'MV_90' in rt_label:
+        if not 'rad_90_open' in res_images:
+            res_images['rad_90_open'] = dcm_image
+        else:
+            res_images['rad_90_mlc'] = dcm_image
+    elif 'MV_0' in rt_label:
+        if not 'rad_0_open' in res_images:
+            res_images['rad_0_open'] = dcm_image
+        else:
+            res_images['rad_0_mlc'] = dcm_image
+    
     return res_images
 
-def detect_catphan_tests(dcm_image, res_images):
+def detect_ct_tests(dcm_image, res_images):
 
     # Modality should be CT
     modality = dcm_image.metadata[0x0008, 0x0060].value
@@ -245,8 +276,14 @@ def detect_catphan_tests(dcm_image, res_images):
         # Save inverted image
         dcm_image.save(dcm_image.path)
     
+    # CIRS electron density
+    patient_name = dcm_image.metadata[0x0010, 0x0010].value.alphabetic.lower()
+    if modality == 'CT' and 'cirs' in patient_name:
+        # Save the analysis image if does not exist already
+        if not 'cirs' in res_images:
+            res_images['cirs'] = dcm_image
     # Linac CBCT
-    if modality == 'CT' and (0x0008, 0x114a) in dcm_image.metadata:
+    elif modality == 'CT' and (0x0008, 0x114a) in dcm_image.metadata:
         
         # For Linac CBCT, SOP UID should be RT Plan storage
         ref_inst = 'RT Plan or RT Ion Plan or Radiation Set to be verified'
@@ -254,11 +291,16 @@ def detect_catphan_tests(dcm_image, res_images):
         catphan_test2 = dcm_image.metadata[0x0008, 0x114a].value[0][0x0040, 0xa170].value[0][0x0008, 0x0104].value == ref_inst
         
         if catphan_test1 or catphan_test2:
-            
-            
+                        
             # Save the analysis image if does not exist already
             if not 'catphan_linac' in res_images:
                 res_images['catphan_linac'] = dcm_image
+    
+    # Halcyon CT
+    elif  dcm_image.metadata[0x0008, 0x1090].value == 'Halcyon - PVA' and modality == 'CT':
+        # Save the analysis image if does not exist already
+        if not 'catphan_linac' in res_images:
+            res_images['catphan_linac'] = dcm_image
     
     # Diagnostic CT
     elif modality == 'CT' and (0x0008, 0x1140) in dcm_image.metadata and not 'catphan' in res_images:
@@ -317,6 +359,8 @@ def detect_winston_tests(dcm_image, res_images):
 
     # Patient name could be added as a filter    
 
+    # TODO Tries to do Winston test also for T2/T3 tests
+
     # Modality should be RTIMAGE
     modality = dcm_image.metadata[0x0008, 0x0060].value    
     if modality == 'RTIMAGE' and not 'winston' in res_images:
@@ -330,35 +374,75 @@ def detect_winston_tests(dcm_image, res_images):
 
 def run_t2_t3_tests(test, args):   
     res = []
+    res_rad, res_rad_fixed = [], []
     
-    # Dose-rate & gantry speed test (T2)
-    t2 = drgs_test(test['t2_mlc'], test['t2_open'], tol=DRGS_TOL, 
-              savepath=args.save_path, pdf=args.pdf, plot=args.plot,
-              segment_size=test['t2_gs_segment_size'], roi=test['t2_gs_roi'])
-    res.append(t2)
-    
-    # mlc speed test (T3)
-    t3 = drmlc_test(test['t3_mlc'], test['t3_open'], tol=DRMLC_TOL, 
-              savepath=args.save_path, pdf=args.pdf, plot=args.plot,
-              segment_size=test['t3_segment_size'], roi=test['t3_roi'])
-    res.append(t3)
-    
+    if 't3_mlc' in test:
+        # Dose-rate & gantry speed test (T2)
+        t2 = drgs_test(test['t2_mlc'], test['t2_open'], tol=DRGS_TOL, 
+                  savepath=args.save_path, pdf=args.pdf, plot=args.plot,
+                  segment_size=test['t2_gs_segment_size'], roi=test['t2_gs_roi'])
+        res.append(t2)
+        
+        # mlc speed test (T3)
+        t3 = drmlc_test(test['t3_mlc'], test['t3_open'], tol=DRMLC_TOL, 
+                  savepath=args.save_path, pdf=args.pdf, plot=args.plot,
+                  segment_size=test['t3_segment_size'], roi=test['t3_roi'])
+        res.append(t3)              
+        
     # Dose rate test for Halcyon
     if 't2_dr_open' and 't2_dr_mlc' in test:
         t2_dr = drgs_test(test['t2_dr_mlc'], test['t2_dr_open'], tol=DRGS_TOL, 
                   savepath=args.save_path, pdf=args.pdf, plot=args.plot,
                   segment_size=test['t2_dr_segment_size'], roi=test['t2_dr_roi'])
         res.append(t2_dr)
+        
+    # Routine RAD test
+    if 'rad_180_open' in test:
+        # RAD test
+        rad = rad_test(test['rad_180_mlc'], test['rad_180_open'], tol=DRMLC_TOL, 
+                  savepath=args.save_path, pdf=args.pdf, plot=args.plot)
+        res_rad.append(rad)
+    
+    # Fixed field test in case of problems
+    if 'rad_0_open' in test:
+        # RAD test
+        
+        rad = rad_test(test['rad_0_mlc'], test['rad_0_open'], tol=DRMLC_TOL, 
+                  savepath=args.save_path, pdf=args.pdf, plot=args.plot)
+        res_rad_fixed.append(rad)
+            # RAD test
+        rad = rad_test(test['rad_90_mlc'], test['rad_90_open'], tol=DRMLC_TOL, 
+                  savepath=args.save_path, pdf=args.pdf, plot=args.plot)
+        res_rad_fixed.append(rad)
     
     # Save results as a row in Excel file
-    save_excel(test['t2_mlc'], res, save_path=args.save_path, test='T2-T3')
+    if 't2_mlc' in test:
+        modality = 'T2-T3'        
+        save_excel(test['t2_mlc'], res, save_path=args.save_path, test=modality)
+        
+        # Move analyzed files to the processed folder, create subfolder by modality        
+        # Assume that there is one folder for patient name/ID
+        parent_folder = Path(test['t2_mlc'].path).parent.parent.stem  
+     
+    # Routine RAD test
+    if 'rad_180_open' in test:
+        modality = 'RAD'
+        save_excel(test['rad_180_open'], res_rad, save_path=args.save_path, test=modality)
+        
+        # Move analyzed files to the processed folder, create subfolder by modality        
+        # Assume that there is one folder for patient name/ID
+        parent_folder = Path(test['rad_180_open'].path).parent.parent.stem 
+    if 'rad_0_open' in test:
+        modality = 'RAD_fixed_angle'
+        save_excel(test['rad_0_open'], res_rad_fixed, save_path=args.save_path, test=modality)
+        
+        # Move analyzed files to the processed folder, create subfolder by modality        
+        # Assume that there is one folder for patient name/ID
+        parent_folder = Path(test['rad_0_open'].path).parent.parent.stem  
     
-    # Move analyzed files to the processed folder, create subfolder by modality
-    modality = 'T2-T3'
-    # Assume that there is one folder for patient name/ID
-    parent_folder = Path(test['t2_mlc'].path).parent.parent.stem  
     # Possible test images
-    t2t3_images = ['t2_mlc', 't2_open', 't3_mlc', 't3_open', 't2_dr_mlc', 't2_dr_open']
+    t2t3_images = ['t2_mlc', 't2_open', 't3_mlc', 't3_open', 't2_dr_mlc', 't2_dr_open', 
+                   'rad_180_mlc', 'rad_180_open', 'rad_90_mlc', 'rad_90_open', 'rad_0_mlc', 'rad_0_open']
     for key, im in test.items():
         if key in t2t3_images:            
             # Replace the data folder in image path with processed
