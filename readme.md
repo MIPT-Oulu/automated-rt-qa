@@ -2,6 +2,8 @@
 
 (c) Santeri Rytky, Oulu University Hospital, 2024
 
+[![DOI](https://zenodo.org/badge/807553791.svg)](https://doi.org/10.5281/zenodo.20510489)
+
 ## Background
 Multiple quality assurance tests are done periodically at radiation therapy clinics. 
 The analysis of the measurements is often time-consuming and subject to errors from manual processing.
